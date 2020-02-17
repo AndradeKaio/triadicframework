@@ -1,5 +1,7 @@
 package fca;
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -16,8 +18,12 @@ import util.Pair;
 import util.Triple;
 
 
-public class TContext {
+public class Triadic {
 
+	
+	public boolean isLatticeBuilt;
+	
+	
 	private int objects;
 	private int attributes;
 	private int conditions;
@@ -32,20 +38,23 @@ public class TContext {
 	private BitSet[] bgm;
 	
 	
-	private ArrayList<String> objectsList;
-	private ArrayList<String> attributesList;
-	private ArrayList<String> conditionsList;
+	private ArrayList<String> strObjectsList;
+	private ArrayList<String> strAttributesList;
+	private ArrayList<String> strConditionsList;
 	
+	private TriLattice lattice;
 	
-	
-	public TContext(int objects, int attributes, int conditions) {
+	public Triadic(int objects, int attributes, int conditions) {
+		
+		this.isLatticeBuilt = false;
+		
 		this.objects = objects;
 		this.attributes = attributes;
 		this.conditions = conditions;
 		
-		this.objectsList = new ArrayList<String>();
-		this.attributesList = new ArrayList<String>();
-		this.conditionsList = new ArrayList<String>();
+		this.strObjectsList = new ArrayList<String>();
+		this.strAttributesList = new ArrayList<String>();
+		this.strConditionsList = new ArrayList<String>();
 		
 		
 		this.scaleGMB = this.attributes * this.conditions;
@@ -58,29 +67,114 @@ public class TContext {
 
 	}
 	
-
-	public void query3D(Set<Integer> objects, Set<Integer> attributes, Set<Integer> conditions) {
-		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> triConceptsDim1 = query1D(objects, 0);
-		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> triConceptsDim2 = query1D(attributes, 1);
-		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> triConceptsDim3 = query1D(conditions, 2);
-		
-		HashSet<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> result = new HashSet<Triple<Set<Integer>,Set<Integer>,Set<Integer>>>();
-		
-		//ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> dim1InterDim2 = query2D(objects, attributes, 0, 1);
-		
-		for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> triple : triConceptsDim3) {
-			HashSet<Integer> inter = new HashSet<Integer>(triple.getModus());
-			inter.retainAll(conditions);
-			if (inter.size() > 0) {
-				result.add(triple);
-			}
+	public void buildLattice(short dimRef, String fileName) {
+		this.lattice = new TriLattice(dimRef, fileName, this.strObjectsList, this.strAttributesList, this.strConditionsList);
+		if (lattice != null && isLatticeBuilt == false) {
+			this.isLatticeBuilt = true;
+			lattice.triadicIpred();
 		}
-		
+	}
+	
+	
+	public void query(HashSet<Integer> objects, HashSet<Integer> attributes, HashSet<Integer> conditions) {
 	}
 	
 	/**
-	 * |DEBUG PUPORSE|
-	 * This methods receives two sets of elements and two integers as the dimension flag.
+	 * 
+	 * @param objects
+	 * @param attributes
+	 * @param conditions
+	 * @return
+	 */
+	public HashSet<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> query3D(HashSet<Integer> objects, HashSet<Integer> attributes, HashSet<Integer> conditions) {
+
+		HashSet<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> result = new HashSet<Triple<Set<Integer>,Set<Integer>,Set<Integer>>>();
+		
+		
+		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> dim1InterDim2 = query2D(objects, attributes, 0, 1);
+		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> triConceptsDim3 = query1D(conditions, 2);
+
+		
+		HashSet<Integer> inter;
+		for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> triple1 : dim1InterDim2) {
+			for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> triple2 : triConceptsDim3) {
+				inter = new HashSet<Integer>(triple1.getExtent());
+				inter.retainAll(triple2.getExtent());
+				if (!(inter.size() > 0))
+					continue;
+				inter = new HashSet<Integer>(triple1.getIntent());
+				inter.retainAll(triple2.getIntent());
+				if (!(inter.size() > 0))
+					continue;
+
+				inter = new HashSet<Integer>(triple1.getModus());
+				inter.retainAll(triple2.getModus());
+				if (!(inter.size() > 0))
+					continue;
+				else { 
+					inter.retainAll(conditions);
+					if (!(inter.size() > 0)) {
+						continue;
+					}
+				}
+	
+				if (!result.contains(triple1)) {
+					result.add(triple1);
+				}
+				if (!result.contains(triple2)) {
+					result.add(triple2);
+				}
+			}
+		}
+		
+		return result;
+		
+	}
+
+	/**
+	 * Rokia's approach
+	 * @param firstDim
+	 * @param secondDim
+	 * @param dim1
+	 * @param dim2
+	 */
+	public void printQuery2DNew(HashSet<Integer> firstDim, HashSet<Integer> secondDim, int dim1, int dim2) {
+		
+		assert(dim1 > dim2);
+		
+		HashSet<Integer> objects, attributes, conditions;
+		if (dim1 == 0 && dim2 == 1) {
+			conditions = (HashSet<Integer>) primeObjectsAttributes(firstDim, secondDim);
+			objects = (HashSet<Integer>) primeAttributesConditions(secondDim, conditions);
+			attributes = (HashSet<Integer>) primeObjectsConditions(objects, conditions);
+		}else if (dim1 == 0 && dim2 == 2) {
+			attributes = (HashSet<Integer>) primeObjectsConditions(firstDim, secondDim);
+			objects = (HashSet<Integer>) primeAttributesConditions(attributes, secondDim);
+			conditions = (HashSet<Integer>) primeObjectsAttributes(objects, attributes);
+		}else {
+			objects = (HashSet<Integer>) primeAttributesConditions(firstDim, secondDim);
+			conditions = (HashSet<Integer>) primeObjectsAttributes(objects, firstDim);
+			attributes = (HashSet<Integer>) primeAttributesConditions(objects, conditions);
+		}
+		Triple<HashSet<Integer>, HashSet<Integer>, HashSet<Integer>> triconcept = 
+				new Triple<HashSet<Integer>, HashSet<Integer>, HashSet<Integer>>(objects, attributes, conditions);
+		
+		ArrayList<HashSet<String>> aux = new ArrayList<HashSet<String>>(Collections.nCopies(3, new HashSet<String>()));
+
+		aux.set(dim1, (HashSet<String>) this.intToStr(firstDim, dim1));
+		aux.set(dim2, (HashSet<String>) this.intToStr(secondDim, dim2));
+		
+		System.out.println("\nQUERY2D("+aux+")=\n");
+		System.out.println("(Upper bound)");
+		System.out.println("{"+this.intToStr(triconcept.getExtent(), 0)+","+ this.intToStr(triconcept.getIntent(), 1)+","+this.intToStr(triconcept.getModus(), 2)+"}");
+		System.out.print("\n(Lower bound)");
+//		ArrayList<HashSet<Integer>> lower = lowerBound1D(triconcept.getExtent(), (HashSet<Integer>)elements);
+
+	}
+	
+	/**
+	 * |DEPRECATED|
+	 * This methods receives two sets of elements and two integers as the dimension offset.
 	 * Calls the query1D two times passing each set as the dimension elements. Get the results and calculate
 	 * the intersection between every element of the triconcepts. If two triconcepts has intersection in
 	 * both dimensions (dim1, dim2) he's added as one of the 2d query result.
@@ -102,50 +196,78 @@ public class TContext {
 		
 				
 		boolean flag1 = false, flag2 = false;
-		
-		
-		
-		for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> triple1 : triConcepts1) {
-				
-			for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> triple2 : triConcepts2) {
 
+		for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> triple1 : triConcepts1) {
+			for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> triple2 : triConcepts2) {
+				
+				if (dim1 == 0)
+				
+				
+				
 				if (dim1 == 0 || dim2 == 0) {
 					Set<Integer> inter = new HashSet<Integer>(triple1.getExtent());
 					inter.retainAll(triple2.getExtent());
+					if (dim1 == 0)
+						inter.retainAll(firstDim);
+					else
+						inter.retainAll(secondDim);
 					if (inter.size() > 0) {
 						if (dim1 == 0) {
-							flag1 = true;
+							inter.retainAll(firstDim);
+							if (inter.size() > 0)
+								flag1 = true;
 						}else {
-							flag2 = true;
+							inter.retainAll(secondDim);
+							if (inter.size() > 0)
+								flag2 = true;
 						}
 					}
 				}
 				if (dim1 == 1 || dim2 == 1) {
 					Set<Integer> inter = new HashSet<Integer>(triple1.getIntent());
 					inter.retainAll(triple2.getIntent());
+					if (dim1 == 1)
+						inter.retainAll(firstDim);
+					else
+						inter.retainAll(secondDim);
 					if (inter.size() > 0) {
 						if (dim1 == 1) {
-							flag1 = true;
+							inter.retainAll(firstDim);
+							if (inter.size() > 0)
+								flag1 = true;
 						}else {
-							flag2 = true;
+							inter.retainAll(secondDim);
+							if (inter.size() > 0)
+								flag2 = true;
 						}
 					}
 				}
 				if (dim1 == 2 || dim2 == 2){
 					Set<Integer> inter = new HashSet<Integer>(triple1.getModus());
 					inter.retainAll(triple2.getModus());
+					if (dim1 == 2)
+						inter.retainAll(firstDim);
+					else
+						inter.retainAll(secondDim);
 					if (inter.size() > 0){
 						if (dim1 == 2) {
-							flag1 = true;
+							inter.retainAll(firstDim);
+							if (inter.size() > 0)
+								flag1 = true;
 						}else {
-							flag2 = true;
+							inter.retainAll(secondDim);
+							if (inter.size() > 0)
+								flag2 = true;
 						}
 					}
 				}
 				if (flag1 && flag2) {
-					result.add(triple1);
-					result.add(triple2);
-				}	
+					if (!result.contains(triple1))
+						result.add(triple1);
+					if (!result.contains(triple2))
+						result.add(triple2);
+				}
+				flag1 = flag2 = false;
 			}
 		}
 		return result;
@@ -159,7 +281,7 @@ public class TContext {
 	 */
 	public ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> query1D(Set<Integer> elements, int dim) {
 		
-		assert(dim <= 3);
+		assert(dim < 3);
 		
 		List<Pair<Set<Integer>, Set<Integer>>> firstDerivateList;
 		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> triconcepts = new ArrayList<Triple<Set<Integer>,Set<Integer>,Set<Integer>>>();
@@ -204,6 +326,122 @@ public class TContext {
 			}
 		}
 		
+		Boolean[] array = immediateSuccessors(sets);
+
+		
+		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> triConceptsImmediateSuccessors = new ArrayList<Triple<Set<Integer>,Set<Integer>,Set<Integer>>>();
+		
+		//get the elements of the dimension of reference to compute lower bounds
+		HashSet<HashSet<Integer>> dimRefElements = new HashSet<HashSet<Integer>>();
+		
+		for (int i = 0; i < array.length; i++)
+			if (array[i]) {
+				triConceptsImmediateSuccessors.add(triconcepts.get(i));
+				dimRefElements.add((HashSet<Integer>) triconcepts.get(i).getExtent());
+			}
+		
+//		ArrayList<HashSet<Integer>> lower = lowerBound1D(dimRefElements, (HashSet<Integer>)elements);
+
+		return triConceptsImmediateSuccessors;
+	}
+	
+	/**
+	 * 
+	 * @param upperBound - Concepts of the Upper Bound set
+	 * @param queryElements - Elements of the query
+	 * @param dimRef - Dimension
+	 * @return
+	 */
+	public HashSet<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> LowerBound1D (ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> upperBound, HashSet<Integer> queryElements, int dimRef){
+		
+		HashSet<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> lowerBound = null;
+		
+
+		
+		if (this.isLatticeBuilt) {
+			
+			lowerBound = new HashSet<Triple<Set<Integer>,Set<Integer>,Set<Integer>>>();
+			HashSet<Integer> aux;
+			
+			for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> concept : upperBound) {
+				
+				//ASSUMING THAT THE LATTICE IS ORDER ALWAYS BY EXTENT (NEED TO BE CHANGE)
+				HashSet<HashSet<Integer>> links = this.lattice.getLinks((HashSet<Integer>)concept.getExtent());
+				
+				//for each extent linked to the concept.extent
+				for (HashSet<Integer> link : links) {
+					
+					//check the dimref of the query
+					if (dimRef == 0) {
+						aux = new HashSet<Integer>(link);
+						aux.retainAll(queryElements);
+						if (aux.size() > 0) {
+							for (Pair<HashSet<Integer>, HashSet<Integer>> pair: this.lattice.getOxAC().get(link)) {
+								lowerBound.add(new Triple<Set<Integer>, Set<Integer>, Set<Integer>>(link, pair.getLeft(), pair.getRight()));
+							}
+						}
+					}else if (dimRef == 1) {
+						
+						for (Pair<HashSet<Integer>, HashSet<Integer>> pair: this.lattice.getOxAC().get(link)) {
+							aux = new HashSet<Integer>(pair.getLeft());
+							aux.retainAll(queryElements);
+							if (aux.size() > 0) {
+								lowerBound.add(new Triple<Set<Integer>, Set<Integer>, Set<Integer>>(link, pair.getLeft(), pair.getRight()));
+							}
+						}
+						
+					}else{
+						for (Pair<HashSet<Integer>, HashSet<Integer>> pair: this.lattice.getOxAC().get(link)) {
+							aux = new HashSet<Integer>(pair.getRight());
+							aux.retainAll(queryElements);
+							if (aux.size() > 0) {
+								lowerBound.add(new Triple<Set<Integer>, Set<Integer>, Set<Integer>>(link, pair.getLeft(), pair.getRight()));
+							}
+						}
+					}
+				}
+			}
+		}else {
+			System.out.println("ERROR: LATTICE WAS NOT BUILDED!");
+		}
+		return lowerBound;
+	}
+	
+	
+	/**
+	 * 
+	 * @param dimRefElements - Concepts dimension query
+	 * @param queryElements - Query elements
+	 * @return - 
+	 */
+	public ArrayList<HashSet<Integer>> lowerBound1D(HashSet<HashSet<Integer>> dimRefElements, HashSet<Integer> queryElements) {
+		
+		ArrayList<HashSet<Integer>> result = null;
+		
+		if (this.isLatticeBuilt) {
+			
+			result = new ArrayList<HashSet<Integer>>();
+			HashSet<Integer> aux;
+			
+			for (HashSet<Integer> element: dimRefElements) {
+				HashSet<HashSet<Integer>> links = this.lattice.getLinks(element); 
+				if (links != null) {
+					for (HashSet<Integer> link : links) {
+						aux = new HashSet<Integer>(link);
+						aux.retainAll(queryElements);
+						if (aux.size() > 0)
+							result.add(link);
+					}
+				}
+			}
+		}
+		return result;
+	}
+	
+	
+	
+	public Boolean[] immediateSuccessors(ArrayList<Set<Integer>> sets) {
+		
 		Boolean[] array = new Boolean[sets.size()];
 		Arrays.fill(array, Boolean.TRUE);
 		
@@ -237,15 +475,7 @@ public class TContext {
 				}
 			}
 		}
-
-		
-		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> triConcepts = new ArrayList<Triple<Set<Integer>,Set<Integer>,Set<Integer>>>();
-		
-		for (int i = 0; i < array.length; i++)
-			if (array[i])
-				triConcepts.add(triconcepts.get(i));
-
-		return triConcepts;
+		return array;
 	}
 	
 	/* PRIMES */
@@ -290,7 +520,7 @@ public class TContext {
 	 */
 	public  Pair<ArrayList<Integer>, ArrayList<Integer>> primeAttributes(Set<Integer> attributes) {
 		if (attributes.size() > this.attributes)
-			System.out.println("Number of attributes exceeded!");
+			System.out.println("Number of attributes exceded!");
 		
 		if (this.mgb == null)
 			this.generateMGBContext();
@@ -320,8 +550,8 @@ public class TContext {
 
 	public Pair<ArrayList<Integer>, ArrayList<Integer>> primeConditions(Set<Integer> conditions) {
 		
-		if (conditions.size() > this.attributes)
-			System.out.println("Number of attributes exceeded!");
+		if (conditions.size() > this.conditions)
+			System.out.println("Number of attributes exceded!");
 		
 		if (this.bgm == null)
 			this.generateBGMContext();
@@ -526,9 +756,50 @@ public class TContext {
 	}
 	
 	
+	
 
 	/*READERS */
 
+	/**
+	 * Read the context in the data-peeler (.data.out) format.
+	 */
+	public void readContextDataPeelerFormat(String fileName) {
+		try {
+			File f = new File(fileName);
+			Scanner sc = new Scanner(f);
+
+			while (sc.hasNextLine()) {
+				String line = sc.nextLine();
+				
+				String obj  = line.split(" ")[0];
+				String attr = line.split(" ")[1];
+				String cond = line.split(" ")[2];
+				
+				if (!this.strObjectsList.contains(obj))
+					this.strObjectsList.add(obj);
+				
+				if (!this.strAttributesList.contains(attr))
+					this.strAttributesList.add(attr);
+				
+				if (!this.strConditionsList.contains(cond))
+					this.strConditionsList.add(cond);
+				
+				int indexAttr = this.strAttributesList.indexOf(attr);
+				int indexCond = this.strConditionsList.indexOf(cond);
+				
+				int p = (this.attributes * (indexCond + 1)) - this.attributes + indexAttr;
+				
+				this.gmb[this.strObjectsList.indexOf(obj)].set(p, true);
+				
+			}
+			
+			
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	
 	/**
 	 * Read the gmb by incidences file.
 	 * 
@@ -549,7 +820,7 @@ public class TContext {
 		    	}else if((char)c == '1') {
 		    		this.gmb[i].set(j, true);
 		    		j++;
-		    	}else if((char)c == '\n') {
+		    	}else if((char)c == '\n' || (char)c == '\r') {
 		    		i++;
 		    	}
 		    }
@@ -558,7 +829,42 @@ public class TContext {
 		 }
 	}
 	
-	
+	public void readContext2(String fileName) {
+		try {
+            File f = new File(fileName);
+            Scanner sc = new Scanner(f);
+
+            if (sc.hasNextLine()) {
+            	String line = sc.nextLine();
+            	String [] elements = line.split(" ");
+            	String [] objects = elements[0].split(",");
+            	String [] attributes = elements[1].split(",");
+            	String [] conditions = elements[2].split(",");
+            	
+            	this.strObjectsList.addAll(Arrays.asList(objects));
+            	this.strAttributesList.addAll(Arrays.asList(attributes));
+            	this.strConditionsList.addAll(Arrays.asList(conditions));
+
+            }
+            int x = 0, j = 0, lines = 0;
+            char c;
+            while(sc.hasNextLine()){
+                String line = sc.nextLine();
+                for (int i = 0; i < line.length(); i++) {
+                	c = line.charAt(i);
+    		    	
+                	if (c == '1')
+                		this.gmb[lines].set(i, true);
+                	else
+						this.gmb[lines].set(i, false);
+                }
+                lines++;
+            }
+            sc.close();
+        } catch (FileNotFoundException e) {         
+            e.printStackTrace();
+        }
+	}
 	
 	public void readContext(String fileName) {
 		int i = 0, j = 0, flag = 0;
@@ -567,18 +873,20 @@ public class TContext {
 			
 			while(flag < 3) {
 				c = br.read();
-				if ((char) c == '\n') {
+
+				if ((char) c == '\n' || (char)c == '\r') {
 					flag++;
 					continue;
 				}
 				if (flag == 0) {
-					this.objectsList.add(String.valueOf((char)c));
+					this.strObjectsList.add(String.valueOf((char)c));
 				}
 				else if (flag == 1) {
-					this.attributesList.add(String.valueOf((char)c));
+					System.out.println("oi");
+					this.strAttributesList.add(String.valueOf((char)c));
 				}
 				else {
-					this.conditionsList.add(String.valueOf((char)c));
+					this.strConditionsList.add(String.valueOf((char)c));
 				}
 			}
 
@@ -592,7 +900,7 @@ public class TContext {
 		    	}else if((char)c == '1') {
 		    		this.gmb[i].set(j, true);
 		    		j++;
-		    	}else if((char)c == '\n') {
+		    	}else if((char)c == '\n' || (char)c == '\r') {
 		    		i++;flag++;
 		    	}
 		    }
@@ -675,120 +983,68 @@ public class TContext {
 	 * @param elements - elements of the dimension to query
 	 * @param dim - flag to indicates the dimension
 	 */
+	
 	public void printQuery1D(Set<String> stringElements, int dim) {
 		System.out.println("QUERY1D("+stringElements+") = ");
 		assert(dim <= 3);
 		
-		Set<Integer> elements = this.stringToInteger(stringElements, dim);
+		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> triconcepts = new ArrayList<Triple<Set<Integer>,Set<Integer>,Set<Integer>>>();
+		Set<Integer> elements = this.strToInt(stringElements, dim);
 		
-		List<Pair<Set<Integer>, Set<Integer>>> firstDerivateList;		
+		triconcepts = this.query1D(elements, dim);
+		if (!triconcepts.isEmpty())
+			for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> concept : triconcepts)
+				System.out.println("{"+this.intToStr(concept.getExtent(), 0)+","+ this.intToStr(concept.getIntent(), 1)+","+this.intToStr(concept.getModus(), 2)+"}");
+		else
+			System.out.println("{}");
 		
-		if (dim == 0) {
-			firstDerivateList = this.factorization(this.primeObjects(elements));
-			for (Pair<Set<Integer>, Set<Integer>> concept : firstDerivateList) {
-				
-				System.out.println("{"+this.integerToString(concept.getLeft(), 1)+","+
-				this.integerToString(concept.getRight(), 2)+","+this.integerToString(this.primeAttributesConditions(concept.getLeft(), concept.getRight()), 0));
-			}
-		}
-		else if (dim == 1) {
-			firstDerivateList = this.factorization(this.primeAttributes(elements));
-			for (Pair<Set<Integer>, Set<Integer>> concept : firstDerivateList) {
-				System.out.println("{"+this.integerToString(concept.getLeft(), 0)+","+
-						this.integerToString(concept.getRight(), 2)+","+this.integerToString(this.primeObjectsConditions(concept.getLeft(), concept.getRight()), 1));
-			}
-		}
-		else {
-			firstDerivateList = this.factorization(this.primeConditions(elements));
-			for (Pair<Set<Integer>, Set<Integer>> concept : firstDerivateList) {
-				System.out.println("{"+this.integerToString(concept.getLeft(), 0)+","+
-						this.integerToString(concept.getRight(), 1)+","+this.integerToString(this.primeObjectsAttributes(concept.getLeft(), concept.getRight()), 2));
-			}
-		}
-		System.out.println("------------------------------------------------------");
+//		ArrayList<HashSet<Integer>> lower = lowerBound1D(dimRefElements, (HashSet<Integer>)elements);
+		
 	}
 	
-	
-public void printQuery2D(HashSet<String> firstDimString, HashSet<String> secondDimString, int dim1, int dim2) {
+	public void printQuery2D(HashSet<String> firstDimString, HashSet<String> secondDimString, int dim1, int dim2) {
 		
 		
-		HashSet<Integer> firstDim  = (HashSet<Integer>)this.stringToInteger(firstDimString, dim1);
-		HashSet<Integer> secondDim = (HashSet<Integer>)this.stringToInteger(secondDimString, dim2);
+		HashSet<Integer> firstDim  = (HashSet<Integer>)this.strToInt(firstDimString, dim1);
+		HashSet<Integer> secondDim = (HashSet<Integer>)this.strToInt(secondDimString, dim2);
 		
-		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> triConcepts1, triConcepts2, result;
-		
-		triConcepts1 = query1D(firstDim, dim1);
-		triConcepts2 = query1D(secondDim, dim2);
-		
-		System.out.println(triConcepts1);
-		boolean flag1 = false, flag2 = false;
-		
-		result = new ArrayList<Triple<Set<Integer>,Set<Integer>,Set<Integer>>>();
+		ArrayList<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> result = new ArrayList<Triple<Set<Integer>,Set<Integer>,Set<Integer>>>();
 		
 		ArrayList<HashSet<String>> aux = new ArrayList<HashSet<String>>(Collections.nCopies(3, new HashSet<String>()));
 
-		aux.set(dim1, (HashSet<String>) this.integerToString(firstDim, dim1));
-		aux.set(dim2, (HashSet<String>) this.integerToString(secondDim, dim2));
+		aux.set(dim1, (HashSet<String>) this.intToStr(firstDim, dim1));
+		aux.set(dim2, (HashSet<String>) this.intToStr(secondDim, dim2));
 		
 		System.out.println("QUERY2D("+aux+")=");
 		
 		
-		for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> triple1 : triConcepts1) {
-				
-			for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> triple2 : triConcepts2) {
+		result = query2D(firstDim, secondDim, dim1, dim2);
+		
+		if (!result.isEmpty())
+			for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> concept : result)
+				System.out.println("{"+this.intToStr(concept.getExtent(), 0)+","+ this.intToStr(concept.getIntent(), 1)+","+this.intToStr(concept.getModus(), 2)+"}");
+		else
+			System.out.println("{}");
 
-				if (dim1 == 0 || dim2 == 0) {
-					Set<Integer> inter = new HashSet<Integer>(triple1.getExtent());
-					inter.retainAll(triple2.getExtent());
-					if (inter.size() > 0) {
-						if (dim1 == 0) {
-							flag1 = true;
-						}else {
-							flag2 = true;
-						}
-					}
-				}
-				
-				if (dim1 == 1 || dim2 == 1) {
-					Set<Integer> inter = new HashSet<Integer>(triple1.getIntent());
-					inter.retainAll(triple2.getIntent());
-					if (inter.size() > 0) {
-						if (dim1 == 1) {
-							flag1 = true;
-						}else {
-							flag2 = true;
-						}
-					}
-				}
-				if (dim1 == 2 || dim2 == 2){
-					Set<Integer> inter = new HashSet<Integer>(triple1.getModus());
-					inter.retainAll(triple2.getModus());
-					if (inter.size() > 0){
-						if (dim1 == 2) {
-							flag1 = true;
-						}else {
-							flag2 = true;
-						}
-					}
-				}
-
-				if (flag1 && flag2) {
-
-					if (!result.contains(triple1)) {
-						System.out.println("{"+this.integerToString(triple1.getExtent(), 0)+","+this.integerToString(triple1.getIntent(), 1)+","+this.integerToString(triple1.getModus(), 2)+"}");
-						result.add(triple1);
-					}
-					if (!result.contains(triple2)) {
-						System.out.println("{"+this.integerToString(triple2.getExtent(), 0)+","+this.integerToString(triple2.getIntent(), 1)+","+this.integerToString(triple2.getModus(), 2)+"}");
-						result.add(triple2);
-					}
-				}	
-			}
-		}		
 	}
+
 	
-	
-	
+	public void printQuery3D(HashSet<String> objectsString, HashSet<String> attributesString, HashSet<String> conditionsString) {
+
+		
+		HashSet<Integer> objects = (HashSet<Integer>) this.strToInt(objectsString, 0);
+		HashSet<Integer> attributes = (HashSet<Integer>) this.strToInt(attributesString, 1);
+		HashSet<Integer> conditions = (HashSet<Integer>) this.strToInt(conditionsString, 2);
+		HashSet<Triple<Set<Integer>, Set<Integer>, Set<Integer>>> result = new HashSet<Triple<Set<Integer>,Set<Integer>,Set<Integer>>>();
+		result = query3D(objects, attributes, conditions);
+		System.out.println("QUERY3D("+objectsString+", "+attributesString+", "+conditionsString+")=");
+		
+		if (!result.isEmpty())
+			for (Triple<Set<Integer>, Set<Integer>, Set<Integer>> concept : result)
+				System.out.println("{"+this.intToStr(concept.getExtent(), 0)+","+ this.intToStr(concept.getIntent(), 1)+","+this.intToStr(concept.getModus(), 2)+"}");
+		else
+			System.out.println("{}");
+	}
 	
 	
 	/**
@@ -797,7 +1053,7 @@ public void printQuery2D(HashSet<String> firstDimString, HashSet<String> secondD
 	 */
 	public void printPrimeObjects(HashSet<String> objects) {
 		System.out.println("prime objects("+objects+")=");
-		Pair<ArrayList<Integer>, ArrayList<Integer>> result = this.primeObjects(this.stringToInteger(objects, 0));
+		Pair<ArrayList<Integer>, ArrayList<Integer>> result = this.primeObjects(this.strToInt(objects, 0));
 		
 		ArrayList<String> attributeList = this.getAttributesList();
 		ArrayList<String> conditionsList = this.getConditionsList();
@@ -819,7 +1075,7 @@ public void printQuery2D(HashSet<String> firstDimString, HashSet<String> secondD
 	 */
 	public void printPrimeAttributes(HashSet<String> attributes) {
 		System.out.println("prime attributes("+attributes+")=");
-		Pair<ArrayList<Integer>, ArrayList<Integer>> result = this.primeAttributes(this.stringToInteger(attributes, 1));
+		Pair<ArrayList<Integer>, ArrayList<Integer>> result = this.primeAttributes(this.strToInt(attributes, 1));
 		
 		ArrayList<String> objectsList = this.getObjectsList();
 		ArrayList<String> conditionsList = this.getConditionsList();
@@ -841,7 +1097,7 @@ public void printQuery2D(HashSet<String> firstDimString, HashSet<String> secondD
 	 */
 	public void printPrimeConditions(HashSet<String> conditions) {
 		System.out.println("prime conditions("+conditions+")=");
-		Pair<ArrayList<Integer>, ArrayList<Integer>> result = this.primeConditions(this.stringToInteger(conditions, 2));
+		Pair<ArrayList<Integer>, ArrayList<Integer>> result = this.primeConditions(this.strToInt(conditions, 2));
 		
 		ArrayList<String> objectsList = this.getObjectsList();
 		ArrayList<String> attributesList = this.getAttributesList();
@@ -912,7 +1168,7 @@ public void printQuery2D(HashSet<String> firstDimString, HashSet<String> secondD
 	 * @param dim - flag dimension
 	 * @return Set<String> 
 	 */
-	public Set<String> integerToString(Set<Integer> elements, int dim){
+	public Set<String> intToStr(Set<Integer> elements, int dim){
 		Set<String> a = new HashSet<String>();
 		
 		List<String> b;
@@ -936,7 +1192,7 @@ public void printQuery2D(HashSet<String> firstDimString, HashSet<String> secondD
 	}
 
 	
-	public Set<Integer> stringToInteger(Set<String> elements, int dim){
+	public Set<Integer> strToInt(Set<String> elements, int dim){
 		Set<Integer> a = new HashSet<Integer>();
 		
 		List<String> b;
@@ -970,6 +1226,14 @@ public void printQuery2D(HashSet<String> firstDimString, HashSet<String> secondD
 		return objects;
 	}
 
+	public TriLattice getLattice() {
+		return lattice;
+	}
+
+	public void setLattice(TriLattice lattice) {
+		this.lattice = lattice;
+	}
+
 	public int getAttributes() {
 		return attributes;
 	}
@@ -993,14 +1257,14 @@ public void printQuery2D(HashSet<String> firstDimString, HashSet<String> secondD
 	 * @return the objectsList
 	 */
 	public ArrayList<String> getObjectsList() {
-		return objectsList;
+		return strObjectsList;
 	}
 
 	/**
 	 * @param objectsList the objectsList to set
 	 */
 	public void setObjectsList(ArrayList<String> objectsList) {
-		this.objectsList = objectsList;
+		this.strObjectsList = objectsList;
 	}
 
 
@@ -1008,28 +1272,28 @@ public void printQuery2D(HashSet<String> firstDimString, HashSet<String> secondD
 	 * @return the attributesList
 	 */
 	public ArrayList<String> getAttributesList() {
-		return attributesList;
+		return strAttributesList;
 	}
 
 	/**
 	 * @param attributesList the attributesList to set
 	 */
 	public void setAttributesList(ArrayList<String> attributesList) {
-		this.attributesList = attributesList;
+		this.strAttributesList = attributesList;
 	}
 
 	/**
 	 * @return the conditionsList
 	 */
 	public ArrayList<String> getConditionsList() {
-		return conditionsList;
+		return strConditionsList;
 	}
 
 	/**
 	 * @param conditionsList the conditionsList to set
 	 */
 	public void setConditionsList(ArrayList<String> conditionsList) {
-		this.conditionsList = conditionsList;
+		this.strConditionsList = conditionsList;
 	}
 
 }
